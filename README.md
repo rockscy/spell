@@ -27,7 +27,7 @@ Type what you want. Cast a spell. Run the command.
 $ find . -type f -size +100M -mtime -7
 ```
 
-`enter` to run, `e` to edit first, `c` to copy, `r` to retry. That's the whole thing.
+The generated command lands directly in the input box, ready to run or edit. `enter` to execute, `ctrl+r` to regenerate, `esc` to start over. One round-trip, no result page.
 
 ## Why another one
 
@@ -141,12 +141,14 @@ Then `sp "make me a python venv called spike"` and the `cd` sticks.
 
 | key | does |
 |---|---|
-| `enter` (input) | submit query |
-| `enter` (result) | run the command |
-| `e` | edit the suggestion |
-| `c` / `y` | copy to clipboard |
-| `r` | regenerate |
-| `esc` | cancel / quit |
+| `enter` (intent) | cast — send your query to the model |
+| `enter` (command) | run the generated command |
+| `ctrl+r` (command) | regenerate from the same intent |
+| `esc` (command) | start over with a fresh intent |
+| `esc` (intent) | quit |
+| `ctrl+c` | abort, anywhere |
+
+The command lives in the same input box as the intent — edit it inline, then `enter` runs it.
 
 ## History
 

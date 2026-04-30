@@ -142,8 +142,6 @@ func main() {
 		} else {
 			execCommand(res.Command)
 		}
-	case ui.ActionCopy:
-		fmt.Fprintln(os.Stderr, "copied to clipboard.")
 	case ui.ActionAbort, ui.ActionNone:
 		if printMode {
 			os.Exit(130)

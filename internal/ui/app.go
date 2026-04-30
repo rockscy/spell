@@ -3,7 +3,6 @@ package ui
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"runtime"
 	"strings"
@@ -20,21 +19,15 @@ import (
 // ---------- styles ----------
 
 var (
-	colAccent = lg.Color("#a78bfa") // violet — "spell"
+	colAccent = lg.Color("#a78bfa") // violet — intent / "spell"
 	colDim    = lg.Color("#6b7280")
-	colOk     = lg.Color("#10b981")
 	colErr    = lg.Color("#ef4444")
-	colCmd    = lg.Color("#fbbf24") // amber for command
+	colCmd    = lg.Color("#fbbf24") // amber — generated command
 
 	titleStyle = lg.NewStyle().Foreground(colAccent).Bold(true)
 	tagStyle   = lg.NewStyle().Foreground(colAccent).Background(lg.Color("#1f1b2e")).
 			Padding(0, 1).MarginRight(1)
-	dimStyle = lg.NewStyle().Foreground(colDim)
-	cmdBox   = lg.NewStyle().
-			Border(lg.RoundedBorder()).
-			BorderForeground(colCmd).
-			Padding(0, 2).
-			MarginTop(1)
+	dimStyle  = lg.NewStyle().Foreground(colDim)
 	streamBox = lg.NewStyle().
 			Border(lg.RoundedBorder()).
 			BorderForeground(colDim).
@@ -47,10 +40,14 @@ var (
 		Foreground(colErr).
 		Padding(0, 2).
 		MarginTop(1)
-	cmdText  = lg.NewStyle().Foreground(colCmd).Bold(true)
-	okText   = lg.NewStyle().Foreground(colOk)
 	keyHint  = lg.NewStyle().Foreground(colAccent).Bold(true)
 	footerSt = lg.NewStyle().Foreground(colDim).MarginTop(1)
+
+	// Two prompt presets — switching between them is how the input
+	// signals "type natural language" vs "you have a command, hit Enter".
+	intentPromptStyle  = lg.NewStyle().Foreground(colAccent).Bold(true)
+	commandPromptStyle = lg.NewStyle().Foreground(colCmd).Bold(true)
+	commandTextStyle   = lg.NewStyle().Foreground(colCmd)
 )
 
 // ---------- model ----------
@@ -58,9 +55,9 @@ var (
 type state int
 
 const (
-	stInput state = iota
-	stStream
-	stResult
+	stIntent  state = iota // user is typing a natural-language request
+	stStream               // waiting for / receiving the model's response
+	stCommand              // model returned a command, now editable in the input
 	stErr
 )
 
@@ -75,8 +72,6 @@ type Action int
 const (
 	ActionNone Action = iota
 	ActionRun
-	ActionCopy
-	ActionEdit
 	ActionAbort
 )
 
@@ -93,10 +88,10 @@ type Model struct {
 	state         state
 	input         textinput.Model
 	spin          spinner.Model
-	rawText       string // model "answer" content — used for command parsing
-	reasoningText string // chain-of-thought, shown dimmed during streaming only
-	command       string
-	explain       string
+	intent        string // last-submitted natural-language query (for retry)
+	rawText       string // model "answer" stream
+	reasoningText string // chain-of-thought stream
+	explain       string // parsed one-line explanation
 	errStr        string
 	width         int
 	height        int
@@ -110,9 +105,9 @@ func New(p llm.Provider, providerName, initialQuery string) Model {
 	in := textinput.New()
 	in.Prompt = "✦ "
 	in.Placeholder = "describe what you want to do…"
-	in.CharLimit = 500
+	in.CharLimit = 1000
 	in.Focus()
-	in.PromptStyle = lg.NewStyle().Foreground(colAccent).Bold(true)
+	in.PromptStyle = intentPromptStyle
 	in.TextStyle = lg.NewStyle()
 	in.Cursor.Style = lg.NewStyle().Foreground(colAccent)
 	if initialQuery != "" {
@@ -128,7 +123,7 @@ func New(p llm.Provider, providerName, initialQuery string) Model {
 		providerName: providerName,
 		platform:     runtime.GOOS,
 		shell:        detectShell(),
-		state:        stInput,
+		state:        stIntent,
 		input:        in,
 		spin:         sp,
 	}
@@ -147,8 +142,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c":
+		if msg.String() == "ctrl+c" {
 			if m.cancel != nil {
 				m.cancel()
 			}
@@ -177,16 +171,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errStr = "model returned no executable command"
 			return m, nil
 		}
-		m.command = cmd
 		m.explain = explain
-		m.state = stResult
+		m.enterCommandMode(cmd)
 		_ = history.Append(history.Entry{
 			Provider: m.providerName,
-			Query:    m.input.Value(),
+			Query:    m.intent,
 			Command:  cmd,
 			Explain:  explain,
 		})
-		return m, nil
+		return m, textinput.Blink
 
 	case errMsg:
 		m.state = stErr
@@ -199,7 +192,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	if m.state == stInput {
+	if m.state == stIntent || m.state == stCommand {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		return m, cmd
@@ -209,13 +202,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.state {
-	case stInput:
+	case stIntent:
 		switch msg.String() {
 		case "enter":
 			q := strings.TrimSpace(m.input.Value())
 			if q == "" {
 				return m, nil
 			}
+			m.intent = q
 			return m.startStream(q)
 		case "esc":
 			m.finished = Result{Action: ActionAbort}
@@ -230,35 +224,32 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.cancel != nil {
 				m.cancel()
 			}
-			m.state = stInput
-			m.rawText = ""
-			m.reasoningText = ""
+			m.enterIntentMode(m.intent)
 			return m, textinput.Blink
 		}
 
-	case stResult:
+	case stCommand:
 		switch msg.String() {
 		case "enter":
-			m.finished = Result{Command: m.command, Action: ActionRun}
+			cmd := strings.TrimSpace(m.input.Value())
+			if cmd == "" {
+				return m, nil
+			}
+			m.finished = Result{Command: cmd, Action: ActionRun}
 			return m, tea.Quit
-		case "c", "y":
-			_ = copyToClipboard(m.command)
-			m.finished = Result{Command: m.command, Action: ActionCopy}
-			return m, tea.Quit
-		case "e":
-			m.input.SetValue(m.command)
-			m.input.CursorEnd()
-			m.state = stInput
-			m.rawText = ""
-			m.reasoningText = ""
+		case "ctrl+r":
+			if m.intent != "" {
+				return m.startStream(m.intent)
+			}
+			return m, nil
+		case "esc":
+			m.enterIntentMode("")
 			return m, textinput.Blink
-		case "esc", "q":
-			m.finished = Result{Action: ActionAbort}
-			return m, tea.Quit
-		case "r":
-			// regenerate
-			return m.startStream(m.input.Value())
 		}
+		// any other key edits the command in place
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		return m, cmd
 
 	case stErr:
 		switch msg.String() {
@@ -266,9 +257,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.finished = Result{Action: ActionAbort}
 			return m, tea.Quit
 		case "enter":
-			m.state = stInput
-			m.errStr = ""
-			m.rawText = ""
+			m.enterIntentMode(m.intent)
 			return m, textinput.Blink
 		}
 	}
@@ -279,8 +268,8 @@ func (m Model) startStream(q string) (tea.Model, tea.Cmd) {
 	m.state = stStream
 	m.rawText = ""
 	m.reasoningText = ""
-	m.command = ""
 	m.explain = ""
+	m.errStr = ""
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
@@ -295,6 +284,36 @@ func (m Model) startStream(q string) (tea.Model, tea.Cmd) {
 	}
 	m.chunkCh = ch
 	return m, tea.Batch(m.spin.Tick, waitForChunk(ch))
+}
+
+// enterCommandMode swaps the input from intent style to command style
+// and pre-fills it with the generated command, ready to edit or run.
+func (m *Model) enterCommandMode(cmd string) {
+	m.state = stCommand
+	m.input.Prompt = "$ "
+	m.input.PromptStyle = commandPromptStyle
+	m.input.TextStyle = commandTextStyle
+	m.input.Cursor.Style = lg.NewStyle().Foreground(colCmd)
+	m.input.Placeholder = ""
+	m.input.SetValue(cmd)
+	m.input.CursorEnd()
+}
+
+// enterIntentMode resets the input back to the natural-language prompt.
+// preset is what to seed the input with (typically "" or the previous intent).
+func (m *Model) enterIntentMode(preset string) {
+	m.state = stIntent
+	m.input.Prompt = "✦ "
+	m.input.PromptStyle = intentPromptStyle
+	m.input.TextStyle = lg.NewStyle()
+	m.input.Cursor.Style = lg.NewStyle().Foreground(colAccent)
+	m.input.Placeholder = "describe what you want to do…"
+	m.input.SetValue(preset)
+	m.input.CursorEnd()
+	m.rawText = ""
+	m.reasoningText = ""
+	m.explain = ""
+	m.errStr = ""
 }
 
 func waitForChunk(ch <-chan llm.Chunk) tea.Cmd {
@@ -319,16 +338,13 @@ func (m Model) View() string {
 	b.WriteString(dimStyle.Render(fmt.Sprintf("%s · %s", m.platform, m.shell)))
 	b.WriteString("\n\n")
 
-	// input always visible
+	// input is always visible
 	b.WriteString(m.input.View())
 	b.WriteString("\n")
 
 	switch m.state {
 	case stStream:
 		head := fmt.Sprintf("%s thinking…", m.spin.View())
-		// Prefer the answer text when it has started arriving;
-		// otherwise show the model's reasoning so the user knows
-		// something is happening.
 		var body string
 		switch {
 		case m.rawText != "":
@@ -342,19 +358,16 @@ func (m Model) View() string {
 		b.WriteString("\n")
 		b.WriteString(footerSt.Render(keyHint.Render("esc") + dimStyle.Render(" cancel")))
 
-	case stResult:
-		body := cmdText.Render("$ "+m.command) + "\n"
+	case stCommand:
 		if m.explain != "" {
-			body += "\n" + dimStyle.Render(m.explain)
+			b.WriteString("  ")
+			b.WriteString(dimStyle.Render(m.explain))
+			b.WriteString("\n")
 		}
-		b.WriteString(cmdBox.Render(body))
-		b.WriteString("\n")
 		b.WriteString(footerSt.Render(strings.Join([]string{
 			keyHint.Render("enter") + dimStyle.Render(" run"),
-			keyHint.Render("e") + dimStyle.Render(" edit"),
-			keyHint.Render("c") + dimStyle.Render(" copy"),
-			keyHint.Render("r") + dimStyle.Render(" retry"),
-			keyHint.Render("esc") + dimStyle.Render(" cancel"),
+			keyHint.Render("ctrl+r") + dimStyle.Render(" regen"),
+			keyHint.Render("esc") + dimStyle.Render(" start over"),
 		}, "  ")))
 
 	case stErr:
@@ -365,7 +378,7 @@ func (m Model) View() string {
 				keyHint.Render("esc") + dimStyle.Render(" quit"),
 		))
 
-	default: // stInput
+	default: // stIntent
 		b.WriteString(footerSt.Render(
 			keyHint.Render("enter") + dimStyle.Render(" cast  ") +
 				keyHint.Render("esc") + dimStyle.Render(" quit"),
@@ -402,7 +415,6 @@ func parseResponse(raw string) (cmd, explain string) {
 		}
 		explain = rest
 	} else if cmd != "" {
-		// no fence: drop the command line and use the rest
 		explain = strings.TrimSpace(strings.Replace(raw, cmd, "", 1))
 	}
 	if len(explain) > 240 {
@@ -434,28 +446,8 @@ func max(a, b int) int {
 	return b
 }
 
-func copyToClipboard(s string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("pbcopy")
-	case "linux":
-		if _, err := exec.LookPath("wl-copy"); err == nil {
-			cmd = exec.Command("wl-copy")
-		} else {
-			cmd = exec.Command("xclip", "-selection", "clipboard")
-		}
-	case "windows":
-		cmd = exec.Command("clip")
-	default:
-		return fmt.Errorf("unsupported platform")
-	}
-	cmd.Stdin = strings.NewReader(s)
-	return cmd.Run()
-}
-
 func detectShell() string {
-	sh := strings.ToLower(strings.TrimSpace(getenv("SHELL")))
+	sh := strings.ToLower(strings.TrimSpace(osGetenv("SHELL")))
 	if sh == "" {
 		if runtime.GOOS == "windows" {
 			return "powershell"
@@ -466,11 +458,6 @@ func detectShell() string {
 		sh = sh[i+1:]
 	}
 	return sh
-}
-
-// indirection so the package compiles without importing os everywhere
-func getenv(k string) string {
-	return osGetenv(k)
 }
 
 func buildSystemPrompt(platform, shell string) string {
