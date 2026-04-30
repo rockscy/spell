@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/rockscy/spell/internal/config"
+	"github.com/rockscy/spell/internal/setup"
 	"github.com/rockscy/spell/internal/ui"
 )
 
@@ -18,15 +19,15 @@ var version = "dev"
 const usage = `spell — AI command palette for your terminal.
 
 USAGE
-  spell [flags] [query…]
+  spell init                    interactive provider setup wizard
+  spell [flags] [query…]        cast a spell
 
 FLAGS
-  -p, --provider NAME   override the default provider
-  -c, --config PATH     use a specific config file
-      --init            write a starter config and exit
-      --where           print resolved config path and exit
-      --version         show version and exit
-  -h, --help            this help
+  -p, --provider NAME           override the default provider
+  -c, --config PATH             use a specific config file
+      --where                   print resolved config path and exit
+      --version                 show version and exit
+  -h, --help                    this help
 
 KEYS
   enter   submit / run command
@@ -37,10 +38,22 @@ KEYS
 `
 
 func main() {
+	// Subcommand handling — must happen before flag.Parse so the
+	// command name is not mistaken for a flag argument.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "init", "setup":
+			os.Args = append(os.Args[:1], os.Args[2:]...)
+			runInit()
+			return
+		}
+	}
+
 	var (
 		providerOverride string
 		configOverride   string
-		doInit, doWhere  bool
+		doWhere          bool
+		doInit           bool
 		showVersion      bool
 		showHelp         bool
 	)
@@ -48,8 +61,8 @@ func main() {
 	flag.StringVar(&providerOverride, "provider", "", "provider name")
 	flag.StringVar(&configOverride, "c", "", "config path")
 	flag.StringVar(&configOverride, "config", "", "config path")
-	flag.BoolVar(&doInit, "init", false, "write starter config")
 	flag.BoolVar(&doWhere, "where", false, "print config path")
+	flag.BoolVar(&doInit, "init", false, "alias for `spell init`")
 	flag.BoolVar(&showVersion, "version", false, "show version")
 	flag.BoolVar(&showHelp, "h", false, "help")
 	flag.BoolVar(&showHelp, "help", false, "help")
@@ -72,33 +85,25 @@ func main() {
 		return
 	}
 	if doInit {
-		created, err := config.WriteExample()
-		check(err)
-		p := config.Path()
-		if created {
-			fmt.Fprintf(os.Stderr, "wrote starter config to %s\n", p)
-			fmt.Fprintln(os.Stderr, "edit it to add your api keys, then run `spell`.")
-		} else {
-			fmt.Fprintf(os.Stderr, "config already exists at %s\n", p)
-		}
+		runInit()
 		return
 	}
 
 	cfg, err := config.Load()
 	if err != nil {
 		if os.IsNotExist(err) {
-			created, werr := config.WriteExample()
-			check(werr)
-			if created {
-				fmt.Fprintf(os.Stderr, "no config found — wrote starter to %s\n", config.Path())
-				fmt.Fprintln(os.Stderr, "edit it to add your api keys, then run `spell` again.")
-				os.Exit(2)
-			}
+			fmt.Fprintln(os.Stderr, "no config yet — running `spell init`...")
+			fmt.Fprintln(os.Stderr)
+			runInit()
+			return
 		}
 		check(err)
 	}
 	if len(cfg.Providers) == 0 {
-		fail("no providers configured in %s", config.Path())
+		fmt.Fprintln(os.Stderr, "no providers configured — running `spell init`...")
+		fmt.Fprintln(os.Stderr)
+		runInit()
+		return
 	}
 
 	name := providerOverride
@@ -106,7 +111,6 @@ func main() {
 		name = cfg.Default
 	}
 	if name == "" {
-		// pick the first declared
 		for k := range cfg.Providers {
 			name = k
 			break
@@ -114,10 +118,10 @@ func main() {
 	}
 	pcfg, ok := cfg.Providers[name]
 	if !ok {
-		fail("provider %q not found in config", name)
+		fail("provider %q not found in config — try `spell init`", name)
 	}
-	if pcfg.APIKey == "" || strings.HasPrefix(pcfg.APIKey, "$") {
-		fail("provider %q has no api_key (got %q) — set the env var or fill the config", name, pcfg.APIKey)
+	if pcfg.APIKey == "" {
+		fail("provider %q has an empty api_key (env var unset?) — try `spell init` or check your shell env", name)
 	}
 	provider, err := config.Build(name, pcfg)
 	check(err)
@@ -147,6 +151,17 @@ func main() {
 	}
 }
 
+func runInit() {
+	if err := setup.Run(); err != nil {
+		// huh returns its own error on user abort (Ctrl+C); keep the
+		// exit code distinguishable but quiet.
+		if err.Error() == "user aborted" {
+			os.Exit(130)
+		}
+		check(err)
+	}
+}
+
 func execCommand(cmd string) {
 	cmd = strings.TrimSpace(cmd)
 	if cmd == "" {
@@ -160,7 +175,6 @@ func execCommand(cmd string) {
 	args := []string{shell, "-c", cmd}
 	env := os.Environ()
 	if err := syscall.Exec(shell, args, env); err != nil {
-		// fall back: print and let the user paste
 		fmt.Println(cmd)
 	}
 }

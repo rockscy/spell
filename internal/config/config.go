@@ -12,6 +12,7 @@ import (
 	"github.com/rockscy/spell/internal/llm"
 )
 
+
 type ProviderCfg struct {
 	Type      string `toml:"type"`       // "openai-compatible" | "anthropic"
 	BaseURL   string `toml:"base_url"`
@@ -57,85 +58,6 @@ func Load() (*Config, error) {
 	}
 	return &c, nil
 }
-
-// WriteExample creates the config directory and a starter config.toml
-// at Path() if it does not already exist. Returns true if a new file
-// was written.
-func WriteExample() (bool, error) {
-	p := Path()
-	if _, err := os.Stat(p); err == nil {
-		return false, nil
-	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return false, err
-	}
-	return true, os.WriteFile(p, []byte(exampleTOML), 0o600)
-}
-
-const exampleTOML = `# spell — AI command palette for your terminal
-# https://github.com/rockscy/spell
-#
-# pick the active provider with "default", or override per-run with -p <name>.
-default = "openai"
-
-# ---------- OpenAI ----------
-[providers.openai]
-type     = "openai-compatible"
-base_url = "https://api.openai.com/v1"
-api_key  = "$OPENAI_API_KEY"
-model    = "gpt-4o-mini"
-
-# ---------- Anthropic (native protocol) ----------
-[providers.anthropic]
-type     = "anthropic"
-api_key  = "$ANTHROPIC_API_KEY"
-model    = "claude-haiku-4-5-20251001"
-
-# ---------- Local: Ollama ----------
-[providers.ollama]
-type     = "openai-compatible"
-base_url = "http://localhost:11434/v1"
-api_key  = "ollama"  # ollama ignores the key but the field is required
-model    = "llama3.2"
-
-# ---------- Xiaomi MiMo (Token Plan, Singapore) ----------
-# Uses reasoning models — bump max_tokens so the model has budget
-# for both its chain-of-thought and the final command.
-# [providers.mimo]
-# type       = "openai-compatible"
-# base_url   = "https://token-plan-sgp.xiaomimimo.com/v1"
-# api_key    = "$MIMO_API_KEY"
-# model      = "mimo-v2-pro"  # or mimo-v2.5-pro / mimo-v2-omni
-# max_tokens = 2048
-
-# ---------- DeepSeek ----------
-# [providers.deepseek]
-# type     = "openai-compatible"
-# base_url = "https://api.deepseek.com/v1"
-# api_key  = "$DEEPSEEK_API_KEY"
-# model    = "deepseek-chat"
-
-# ---------- Moonshot / Kimi ----------
-# [providers.kimi]
-# type     = "openai-compatible"
-# base_url = "https://api.moonshot.cn/v1"
-# api_key  = "$MOONSHOT_API_KEY"
-# model    = "moonshot-v1-8k"
-
-# ---------- Groq ----------
-# [providers.groq]
-# type     = "openai-compatible"
-# base_url = "https://api.groq.com/openai/v1"
-# api_key  = "$GROQ_API_KEY"
-# model    = "llama-3.3-70b-versatile"
-
-# ---------- OpenRouter ----------
-# [providers.openrouter]
-# type     = "openai-compatible"
-# base_url = "https://openrouter.ai/api/v1"
-# api_key  = "$OPENROUTER_API_KEY"
-# model    = "anthropic/claude-haiku-4-5"
-`
 
 // Build wires a ProviderCfg into a concrete llm.Provider.
 func Build(name string, p ProviderCfg) (llm.Provider, error) {

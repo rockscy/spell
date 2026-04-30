@@ -67,35 +67,45 @@ make build && ./bin/spell --help
 
 ## Configure
 
-On first run, `spell` writes a starter config:
-
 ```sh
-spell --init
-$EDITOR "$(spell --where)"
+spell init
 ```
 
-A `~/.config/spell/config.toml` looks like this — pick the provider you want as `default`, fill in **your own** API key (env var refs are expanded):
+That's it. `spell init` walks you through a 4-step picker — provider → API key → model → default — and writes the config for you. You can re-run it any time to add another provider, change the default, or edit an existing one.
 
-```toml
-default = "openai"
-
-[providers.openai]
-type     = "openai-compatible"
-base_url = "https://api.openai.com/v1"
-api_key  = "$OPENAI_API_KEY"
-model    = "gpt-4o-mini"
-
-[providers.anthropic]
-type     = "anthropic"
-api_key  = "$ANTHROPIC_API_KEY"
-model    = "claude-haiku-4-5-20251001"
-
-[providers.ollama]
-type     = "openai-compatible"
-base_url = "http://localhost:11434/v1"
-api_key  = "ollama"
-model    = "llama3.2"
 ```
+✦ spell init
+  Let's get you a provider configured.
+
+? Pick a provider
+  ▸ OpenAI
+    Anthropic (Claude)
+    Xiaomi MiMo (Token Plan, Singapore)
+    DeepSeek
+    Moonshot / Kimi
+    Groq  (fast inference)
+    OpenRouter  (one key, every model)
+    Ollama  (local, no key needed)
+    Custom  (any OpenAI- or Anthropic-compatible endpoint)
+
+? API key for openai
+  $OPENAI_API_KEY
+  > paste the key, or keep the $ENV_VAR reference and set it in your shell.
+
+? Model
+  ▸ ★ GPT-4o mini  (fast, cheap)
+    GPT-4o
+    o4-mini  (reasoning)
+    Custom (type your own)
+
+? Set "openai" as the default provider?  [Y/n]
+
+✓ Saved to ~/.config/spell/config.toml
+```
+
+Reasoning models (o-series, MiMo Pro, DeepSeek-R1) automatically get `max_tokens = 2048` so they have budget for chain-of-thought plus the final command.
+
+If you'd rather hand-edit, the config file is plain TOML at `$(spell --where)`.
 
 ### Already works with
 
