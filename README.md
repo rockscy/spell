@@ -9,6 +9,8 @@ Type what you want. Cast a spell. Run the command.
 [![Go Report](https://goreportcard.com/badge/github.com/rockscy/spell)](https://goreportcard.com/report/github.com/rockscy/spell)
 [![Release](https://img.shields.io/github/v/release/rockscy/spell?color=a78bfa)](https://github.com/rockscy/spell/releases)
 
+**English** · [简体中文](README.zh.md)
+
 <img src="docs/demo.gif" alt="spell demo" width="720"/>
 
 </div>
