@@ -98,6 +98,16 @@ base_url = "http://localhost:11434/v1"
 api_key  = "ollama"  # ollama ignores the key but the field is required
 model    = "llama3.2"
 
+# ---------- Xiaomi MiMo (Token Plan, Singapore) ----------
+# Uses reasoning models — bump max_tokens so the model has budget
+# for both its chain-of-thought and the final command.
+# [providers.mimo]
+# type       = "openai-compatible"
+# base_url   = "https://token-plan-sgp.xiaomimimo.com/v1"
+# api_key    = "$MIMO_API_KEY"
+# model      = "mimo-v2-pro"  # or mimo-v2.5-pro / mimo-v2-omni
+# max_tokens = 2048
+
 # ---------- DeepSeek ----------
 # [providers.deepseek]
 # type     = "openai-compatible"
@@ -136,6 +146,7 @@ func Build(name string, p ProviderCfg) (llm.Provider, error) {
 			BaseURL:    p.BaseURL,
 			APIKey:     p.APIKey,
 			Model:      p.Model,
+			MaxTokens:  p.MaxTokens,
 			HTTPClient: httpc,
 			Label:      name,
 		}, nil

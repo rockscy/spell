@@ -90,18 +90,19 @@ type Model struct {
 	platform     string
 	shell        string
 
-	state    state
-	input    textinput.Model
-	spin     spinner.Model
-	rawText  string
-	command  string
-	explain  string
-	errStr   string
-	width    int
-	height   int
-	chunkCh  <-chan llm.Chunk
-	cancel   context.CancelFunc
-	finished Result
+	state         state
+	input         textinput.Model
+	spin          spinner.Model
+	rawText       string // model "answer" content — used for command parsing
+	reasoningText string // chain-of-thought, shown dimmed during streaming only
+	command       string
+	explain       string
+	errStr        string
+	width         int
+	height        int
+	chunkCh       <-chan llm.Chunk
+	cancel        context.CancelFunc
+	finished      Result
 }
 
 // New constructs an interactive Model.
@@ -162,7 +163,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errStr = msg.Err.Error()
 			return m, nil
 		}
-		m.rawText += msg.Delta
+		if msg.Reasoning {
+			m.reasoningText += msg.Delta
+		} else {
+			m.rawText += msg.Delta
+		}
 		return m, waitForChunk(m.chunkCh)
 
 	case doneMsg:
@@ -227,6 +232,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.state = stInput
 			m.rawText = ""
+			m.reasoningText = ""
 			return m, textinput.Blink
 		}
 
@@ -244,6 +250,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.CursorEnd()
 			m.state = stInput
 			m.rawText = ""
+			m.reasoningText = ""
 			return m, textinput.Blink
 		case "esc", "q":
 			m.finished = Result{Action: ActionAbort}
@@ -271,6 +278,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) startStream(q string) (tea.Model, tea.Cmd) {
 	m.state = stStream
 	m.rawText = ""
+	m.reasoningText = ""
 	m.command = ""
 	m.explain = ""
 
@@ -318,8 +326,16 @@ func (m Model) View() string {
 	switch m.state {
 	case stStream:
 		head := fmt.Sprintf("%s thinking…", m.spin.View())
-		body := truncate(m.rawText, m.width, 6)
-		if body == "" {
+		// Prefer the answer text when it has started arriving;
+		// otherwise show the model's reasoning so the user knows
+		// something is happening.
+		var body string
+		switch {
+		case m.rawText != "":
+			body = truncate(m.rawText, m.width, 6)
+		case m.reasoningText != "":
+			body = dimStyle.Italic(true).Render(truncate(m.reasoningText, m.width, 6))
+		default:
 			body = dimStyle.Render("(waiting for first token)")
 		}
 		b.WriteString(streamBox.Render(head + "\n" + body))

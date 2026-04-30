@@ -18,6 +18,7 @@ type OpenAI struct {
 	BaseURL    string
 	APIKey     string
 	Model      string
+	MaxTokens  int // 0 = omit the field (let the server pick a default)
 	HTTPClient *http.Client
 	Label      string // human-readable provider name (e.g. "deepseek")
 }
@@ -30,9 +31,10 @@ func (o *OpenAI) Name() string {
 }
 
 type openAIReq struct {
-	Model    string          `json:"model"`
-	Messages []openAIMessage `json:"messages"`
-	Stream   bool            `json:"stream"`
+	Model     string          `json:"model"`
+	Messages  []openAIMessage `json:"messages"`
+	Stream    bool            `json:"stream"`
+	MaxTokens int             `json:"max_tokens,omitempty"`
 }
 
 type openAIMessage struct {
@@ -43,7 +45,8 @@ type openAIMessage struct {
 type openAIStreamChunk struct {
 	Choices []struct {
 		Delta struct {
-			Content string `json:"content"`
+			Content          string `json:"content"`
+			ReasoningContent string `json:"reasoning_content"`
 		} `json:"delta"`
 	} `json:"choices"`
 }
@@ -65,7 +68,8 @@ func (o *OpenAI) Stream(ctx context.Context, system, user string) (<-chan Chunk,
 			{Role: "system", Content: system},
 			{Role: "user", Content: user},
 		},
-		Stream: true,
+		Stream:    true,
+		MaxTokens: o.MaxTokens,
 	})
 	if err != nil {
 		return nil, err
@@ -116,6 +120,13 @@ func (o *OpenAI) Stream(ctx context.Context, system, user string) (<-chan Chunk,
 				continue
 			}
 			for _, ch := range c.Choices {
+				if ch.Delta.ReasoningContent != "" {
+					select {
+					case out <- Chunk{Delta: ch.Delta.ReasoningContent, Reasoning: true}:
+					case <-ctx.Done():
+						return
+					}
+				}
 				if ch.Delta.Content != "" {
 					select {
 					case out <- Chunk{Delta: ch.Delta.Content}:

@@ -47,6 +47,10 @@ changelog:
 
 brews:
   - name: spell
+    # Skip the brew formula step unless the maintainer has wired
+    # a fine-grained PAT with `contents:write` on rockscy/homebrew-tap.
+    # Without it, goreleaser would otherwise fail the whole release.
+    skip_upload: '{{ if isEnvSet "HOMEBREW_TAP_GITHUB_TOKEN" }}false{{ else }}true{{ end }}'
     repository:
       owner: rockscy
       name: homebrew-tap

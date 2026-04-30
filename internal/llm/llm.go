@@ -6,9 +6,13 @@ import (
 )
 
 // Chunk is a single streamed token batch from a Provider.
+// Reasoning is true when Delta is the model's chain-of-thought
+// (e.g. OpenAI o-series / MiMo reasoning_content) rather than the
+// answer text the user actually wants.
 type Chunk struct {
-	Delta string
-	Err   error
+	Delta     string
+	Reasoning bool
+	Err       error
 }
 
 // Provider is the minimal contract every LLM backend must satisfy.
