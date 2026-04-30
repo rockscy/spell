@@ -64,45 +64,52 @@ func (a *Anthropic) Stream(ctx context.Context, system, user string) (<-chan Chu
 		maxTok = 1024
 	}
 
-	body, err := json.Marshal(anthReq{
-		Model:     a.Model,
-		System:    system,
-		Messages:  []anthMessage{{Role: "user", Content: user}},
-		Stream:    true,
-		MaxTokens: maxTok,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	url := strings.TrimRight(base, "/") + "/v1/messages"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", a.APIKey)
-	req.Header.Set("anthropic-version", version)
-	req.Header.Set("Accept", "text/event-stream")
-
-	client := a.HTTPClient
-	if client == nil {
-		client = http.DefaultClient
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 400 {
-		buf, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("anthropic: http %d: %s", resp.StatusCode, strings.TrimSpace(string(buf)))
-	}
-
 	out := make(chan Chunk, 16)
 	go func() {
 		defer close(out)
+
+		// All I/O — including the HTTP round-trip — runs in this
+		// goroutine so the caller can render a loading state while
+		// we wait for the first response byte.
+		body, err := json.Marshal(anthReq{
+			Model:     a.Model,
+			System:    system,
+			Messages:  []anthMessage{{Role: "user", Content: user}},
+			Stream:    true,
+			MaxTokens: maxTok,
+		})
+		if err != nil {
+			out <- Chunk{Err: err}
+			return
+		}
+
+		url := strings.TrimRight(base, "/") + "/v1/messages"
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			out <- Chunk{Err: err}
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-api-key", a.APIKey)
+		req.Header.Set("anthropic-version", version)
+		req.Header.Set("Accept", "text/event-stream")
+
+		client := a.HTTPClient
+		if client == nil {
+			client = http.DefaultClient
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			out <- Chunk{Err: err}
+			return
+		}
 		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			buf, _ := io.ReadAll(resp.Body)
+			out <- Chunk{Err: fmt.Errorf("anthropic: http %d: %s", resp.StatusCode, strings.TrimSpace(string(buf)))}
+			return
+		}
 
 		sc := bufio.NewScanner(resp.Body)
 		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)

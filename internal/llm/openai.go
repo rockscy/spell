@@ -62,46 +62,54 @@ func (o *OpenAI) Stream(ctx context.Context, system, user string) (<-chan Chunk,
 		return nil, ErrNoURL
 	}
 
-	body, err := json.Marshal(openAIReq{
-		Model: o.Model,
-		Messages: []openAIMessage{
-			{Role: "system", Content: system},
-			{Role: "user", Content: user},
-		},
-		Stream:    true,
-		MaxTokens: o.MaxTokens,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	url := strings.TrimRight(o.BaseURL, "/") + "/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+o.APIKey)
-	req.Header.Set("Accept", "text/event-stream")
-
-	client := o.HTTPClient
-	if client == nil {
-		client = http.DefaultClient
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode >= 400 {
-		buf, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("%s: http %d: %s", o.Name(), resp.StatusCode, strings.TrimSpace(string(buf)))
-	}
-
 	out := make(chan Chunk, 16)
 	go func() {
 		defer close(out)
+
+		// All I/O happens here — including the HTTP round-trip — so the
+		// caller can render a spinner while we wait for response headers
+		// (reasoning models often sit on this for 1-3 seconds before
+		// emitting the first byte).
+		body, err := json.Marshal(openAIReq{
+			Model: o.Model,
+			Messages: []openAIMessage{
+				{Role: "system", Content: system},
+				{Role: "user", Content: user},
+			},
+			Stream:    true,
+			MaxTokens: o.MaxTokens,
+		})
+		if err != nil {
+			out <- Chunk{Err: err}
+			return
+		}
+
+		url := strings.TrimRight(o.BaseURL, "/") + "/chat/completions"
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			out <- Chunk{Err: err}
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+o.APIKey)
+		req.Header.Set("Accept", "text/event-stream")
+
+		client := o.HTTPClient
+		if client == nil {
+			client = http.DefaultClient
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			out <- Chunk{Err: err}
+			return
+		}
 		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			buf, _ := io.ReadAll(resp.Body)
+			out <- Chunk{Err: fmt.Errorf("%s: http %d: %s", o.Name(), resp.StatusCode, strings.TrimSpace(string(buf)))}
+			return
+		}
 
 		sc := bufio.NewScanner(resp.Body)
 		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
