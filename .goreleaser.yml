@@ -1,0 +1,59 @@
+version: 2
+project_name: spell
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: spell
+    main: ./cmd/spell
+    binary: spell
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snap"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^test:'
+      - Merge pull request
+      - Merge branch
+
+brews:
+  - name: spell
+    repository:
+      owner: rockscy
+      name: homebrew-tap
+    homepage: https://github.com/rockscy/spell
+    description: AI command palette for your terminal.
+    license: MIT
+    install: |
+      bin.install "spell"
+    test: |
+      system "#{bin}/spell", "--version"

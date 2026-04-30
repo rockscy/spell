@@ -1,0 +1,10 @@
+bin/
+dist/
+*.test
+*.out
+.DS_Store
+.idea/
+.vscode/
+coverage.txt
+spell
+!cmd/spell/
