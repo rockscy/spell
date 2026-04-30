@@ -42,7 +42,13 @@ $ find . -type f -size +100M -mtime -7
 
 ## Install
 
-### `go install` (works today)
+### Homebrew (macOS / Linux)
+
+```sh
+brew install rockscy/tap/spell
+```
+
+### `go install`
 
 ```sh
 go install github.com/rockscy/spell/cmd/spell@latest
@@ -51,12 +57,6 @@ go install github.com/rockscy/spell/cmd/spell@latest
 ### From a release binary
 
 Grab the right archive from [Releases](https://github.com/rockscy/spell/releases) and put `spell` on your `$PATH`.
-
-### Homebrew (coming soon)
-
-```sh
-brew install rockscy/tap/spell   # available once the brew tap is wired
-```
 
 ### From source
 
