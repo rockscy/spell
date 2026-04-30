@@ -159,27 +159,40 @@ func promptCustom(name *string, pcfg *config.ProviderCfg) error {
 }
 
 func promptKey(name string, preset *Preset, pcfg *config.ProviderCfg) error {
-	keyInput := ""
+	// fallback is what we save if the user submits an empty input
+	fallback := ""
 	if preset.EnvVar != "" {
-		keyInput = "$" + preset.EnvVar
+		fallback = "$" + preset.EnvVar
 	}
-	desc := "Paste the key, or keep the $ENV_VAR reference and set the variable in your shell."
 	if preset.Key == "ollama" {
-		desc = "Ollama ignores the key — leave the placeholder as is."
-		if keyInput == "" {
-			keyInput = "ollama"
-		}
+		// ollama ignores the key but the field is required by spec
+		fallback = "ollama"
 	}
-	err := huh.NewInput().
+
+	desc := "Paste the API key."
+	if fallback != "" {
+		desc = fmt.Sprintf("Paste the key, or leave blank to use %s.", fallback)
+	}
+
+	var keyInput string
+	input := huh.NewInput().
 		Title(fmt.Sprintf("API key for %s", name)).
 		Description(desc).
-		Value(&keyInput).
-		Validate(huh.ValidateNotEmpty()).
-		Run()
-	if err != nil {
+		EchoMode(huh.EchoModePassword).
+		Placeholder(fallback).
+		Value(&keyInput)
+	if fallback == "" {
+		input = input.Validate(huh.ValidateNotEmpty())
+	}
+	if err := input.Run(); err != nil {
 		return err
 	}
-	pcfg.APIKey = strings.TrimSpace(keyInput)
+
+	keyInput = strings.TrimSpace(keyInput)
+	if keyInput == "" {
+		keyInput = fallback
+	}
+	pcfg.APIKey = keyInput
 	return nil
 }
 
