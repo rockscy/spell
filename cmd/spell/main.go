@@ -129,7 +129,10 @@ func main() {
 	initialQuery := strings.TrimSpace(strings.Join(flag.Args(), " "))
 	model := ui.New(provider, name, initialQuery)
 
-	prog := tea.NewProgram(model, tea.WithAltScreen())
+	// Inline rendering — keep everything in the user's scrollback, do
+	// not switch to the alt-screen. After exec, the command's output
+	// flows naturally below the spell render.
+	prog := tea.NewProgram(model)
 	final, err := prog.Run()
 	check(err)
 

@@ -118,10 +118,12 @@ If your provider has an OpenAI-compatible endpoint, you set `base_url` and you'r
 ## Usage
 
 ```sh
-spell                                  # interactive TUI
-spell list all docker containers        # pre-fill the prompt
+spell                                   # opens the prompt
+spell list all docker containers        # one-shot: auto-submits and goes straight to the command
 spell -p ollama "compress this folder"  # pick a provider for one shot
 ```
+
+Everything renders **inline** — `spell` never takes over your screen. Run a one-shot, hit `enter` to confirm, the command's output streams right below in the same scrollback.
 
 ### Recommended shell function
 

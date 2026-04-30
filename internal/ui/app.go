@@ -78,6 +78,7 @@ const (
 type chunkMsg llm.Chunk
 type doneMsg struct{}
 type errMsg struct{ err error }
+type autoSubmitMsg struct{}
 
 type Model struct {
 	provider     llm.Provider
@@ -132,7 +133,16 @@ func New(p llm.Provider, providerName, initialQuery string) Model {
 // Finished reports the user's choice once the program quits.
 func (m Model) Finished() Result { return m.finished }
 
-func (m Model) Init() tea.Cmd { return textinput.Blink }
+func (m Model) Init() tea.Cmd {
+	cmds := []tea.Cmd{textinput.Blink}
+	// If the program was launched with `spell <query>`, the input is
+	// pre-filled — kick off the model call right away so the user
+	// doesn't have to press Enter on text they already typed.
+	if strings.TrimSpace(m.input.Value()) != "" {
+		cmds = append(cmds, func() tea.Msg { return autoSubmitMsg{} })
+	}
+	return tea.Batch(cmds...)
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -190,6 +200,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
 		return m, cmd
+
+	case autoSubmitMsg:
+		q := strings.TrimSpace(m.input.Value())
+		if q == "" || m.state != stIntent {
+			return m, nil
+		}
+		m.intent = q
+		return m.startStream(q)
 	}
 
 	if m.state == stIntent || m.state == stCommand {
