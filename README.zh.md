@@ -190,4 +190,4 @@ make release-snap # 本地 goreleaser 模拟一次 release
 
 ## License
 
-[MIT](LICENSE) © 2026 —— 用 [Bubble Tea](https://github.com/charmbracelet/bubbletea)、[Lip Gloss](https://github.com/charmbracelet/lipgloss) 和"对臃肿 Electron 应用的健康鄙视"造出来。
+[MIT](LICENSE) © 2026 —— 用 [Bubble Tea](https://github.com/charmbracelet/bubbletea) + [Lip Gloss](https://github.com/charmbracelet/lipgloss) 写的，顺便鄙视一下那些又卡又胖的 Electron 应用。
