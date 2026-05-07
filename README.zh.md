@@ -90,6 +90,10 @@ spell init
     Ollama  (local, no key needed)
     Custom  (any OpenAI- or Anthropic-compatible endpoint)
 
+? Base URL
+  https://api.openai.com/v1
+  > 回车用默认；或粘贴别的 endpoint（区域镜像 / 代理 / 自建网关）
+
 ? API key for openai
   ●●●●●●●●●●●●  ← 输入框，遮挡的 password mode
   > 粘贴 key 即可；留空则使用 $ENV_VAR 环境变量。

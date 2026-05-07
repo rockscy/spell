@@ -90,9 +90,14 @@ That's it. `spell init` walks you through a 4-step picker — provider → API k
     Ollama  (local, no key needed)
     Custom  (any OpenAI- or Anthropic-compatible endpoint)
 
+? Base URL
+  https://api.openai.com/v1
+  > press Enter to keep the default, or paste a different endpoint
+    (regional mirror, proxy, self-hosted gateway, etc.)
+
 ? API key for openai
-  $OPENAI_API_KEY
-  > paste the key, or keep the $ENV_VAR reference and set it in your shell.
+  ●●●●●●●●●●●●
+  > paste the key, or leave blank to use $OPENAI_API_KEY.
 
 ? Model
   ▸ ★ GPT-4o mini  (fast, cheap)

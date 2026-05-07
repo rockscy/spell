@@ -89,6 +89,14 @@ func addOne(cfg *config.Config) error {
 		if err := promptCustom(&name, &pcfg); err != nil {
 			return err
 		}
+	} else {
+		// Preset providers come with a baked-in base URL, but users
+		// occasionally need to point at a regional mirror, a proxy,
+		// or a self-hosted gateway. Offer an optional override —
+		// empty submission keeps the preset.
+		if err := promptBaseURLOverride(preset, &pcfg); err != nil {
+			return err
+		}
 	}
 
 	if err := promptKey(name, preset, &pcfg); err != nil {
@@ -156,6 +164,34 @@ func promptCustom(name *string, pcfg *config.ProviderCfg) error {
 				Value(&pcfg.Type),
 		),
 	).Run()
+}
+
+// promptBaseURLOverride lets users point a preset provider at a
+// non-default endpoint — a regional mirror, an OpenAI-compatible
+// proxy, a self-hosted gateway, etc. Press Enter to keep the preset.
+func promptBaseURLOverride(preset *Preset, pcfg *config.ProviderCfg) error {
+	var typed string
+	err := huh.NewInput().
+		Title("Base URL").
+		Description(fmt.Sprintf("Press Enter to use the default (%s), or paste a different endpoint.", preset.BaseURL)).
+		Placeholder(preset.BaseURL).
+		Value(&typed).
+		Validate(func(s string) error {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				return nil // empty = use preset default
+			}
+			return validateURL(s)
+		}).
+		Run()
+	if err != nil {
+		return err
+	}
+	typed = strings.TrimSpace(typed)
+	if typed != "" {
+		pcfg.BaseURL = typed
+	}
+	return nil
 }
 
 func promptKey(name string, preset *Preset, pcfg *config.ProviderCfg) error {
