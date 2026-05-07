@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/rockscy/spell/internal/config"
+	"github.com/rockscy/spell/internal/explain"
 	"github.com/rockscy/spell/internal/setup"
 	"github.com/rockscy/spell/internal/ui"
 )
@@ -22,6 +24,9 @@ USAGE
   spell init                    interactive provider setup wizard
   spell [flags] [query…]        cast a spell
 
+  spell explain <cmd…>          read a plain-language explanation of a command
+  spell install-hook            print a zsh/bash command_not_found hook to install
+
 FLAGS
   -p, --provider NAME           override the default provider
   -c, --config PATH             use a specific config file
@@ -29,12 +34,10 @@ FLAGS
       --version                 show version and exit
   -h, --help                    this help
 
-KEYS
-  enter   submit / run command
-  e       edit the suggested command
-  c       copy command to clipboard and exit
-  r       regenerate
-  esc     cancel
+KEYS (interactive cast)
+  enter   submit intent / run command
+  ctrl+r  regenerate from the same intent
+  esc     start over / quit
 `
 
 func main() {
@@ -45,6 +48,11 @@ func main() {
 		case "init", "setup":
 			os.Args = append(os.Args[:1], os.Args[2:]...)
 			runInit()
+			return
+		case "explain":
+			os.Exit(runExplain(os.Args[2:]))
+		case "install-hook":
+			runInstallHook(os.Args[2:])
 			return
 		}
 	}
@@ -162,6 +170,119 @@ func runInit() {
 		check(err)
 	}
 }
+
+// runExplain handles `spell explain [--hook] <cmd…>`. Returns the exit
+// code the process should use — main passes it to os.Exit so the
+// shell command_not_found hook can preserve "127 = not found".
+func runExplain(args []string) int {
+	hook := false
+	rest := args
+	if len(rest) > 0 && (rest[0] == "--hook" || rest[0] == "-hook") {
+		hook = true
+		rest = rest[1:]
+	}
+	if len(rest) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: spell explain [--hook] <command…>")
+		return 2
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "spell explain:", err)
+		if hook {
+			// Don't make the user's missing-config problem look like
+			// a "not found" mystery — the hook should fall through.
+			return 127
+		}
+		return 1
+	}
+	name := cfg.Default
+	if name == "" {
+		for k := range cfg.Providers {
+			name = k
+			break
+		}
+	}
+	pcfg, ok := cfg.Providers[name]
+	if !ok || pcfg.APIKey == "" {
+		fmt.Fprintln(os.Stderr, "spell explain: no usable provider — run `spell init`")
+		if hook {
+			return 127
+		}
+		return 1
+	}
+	provider, err := config.Build(name, pcfg)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "spell explain:", err)
+		if hook {
+			return 127
+		}
+		return 1
+	}
+
+	mode := explain.ModeExplain
+	if hook {
+		mode = explain.ModeHook
+	}
+	return explain.Run(context.Background(), provider, mode, strings.Join(rest, " "))
+}
+
+// runInstallHook prints a shell snippet the user can append to their
+// rc file. We do not write the file ourselves — that's the user's
+// shell config, not ours, and people have strong opinions about who
+// touches their dotfiles.
+func runInstallHook(args []string) {
+	shellName := ""
+	if len(args) > 0 {
+		shellName = args[0]
+	} else {
+		// best-effort detect from $SHELL
+		if s := os.Getenv("SHELL"); s != "" {
+			parts := strings.Split(s, "/")
+			shellName = parts[len(parts)-1]
+		}
+	}
+	switch shellName {
+	case "zsh":
+		fmt.Print(zshHook)
+	case "bash":
+		fmt.Print(bashHook)
+	default:
+		// Print both so the user can pick.
+		fmt.Println("# --- zsh — append to ~/.zshrc ---")
+		fmt.Print(zshHook)
+		fmt.Println()
+		fmt.Println("# --- bash — append to ~/.bashrc ---")
+		fmt.Print(bashHook)
+		fmt.Fprintln(os.Stderr, "\n# tip: pass `zsh` or `bash` as an argument to print just one")
+	}
+}
+
+const zshHook = `# spell command-not-found hook (zsh)
+# Pipe a typo / unknown command through "spell explain --hook" so the
+# AI suggests what you probably meant. Remove this block to disable.
+command_not_found_handler() {
+  if command -v spell >/dev/null 2>&1; then
+    spell explain --hook "$@"
+    return $?
+  fi
+  echo "zsh: command not found: $1" >&2
+  return 127
+}
+`
+
+const bashHook = `# spell command-not-found hook (bash)
+# Pipe a typo / unknown command through "spell explain --hook" so the
+# AI suggests what you probably meant. Remove this block to disable.
+command_not_found_handle() {
+  if command -v spell >/dev/null 2>&1; then
+    spell explain --hook "$@"
+    return $?
+  fi
+  echo "bash: $1: command not found" >&2
+  return 127
+}
+`
 
 func execCommand(cmd string) {
 	cmd = strings.TrimSpace(cmd)

@@ -141,6 +141,30 @@ sp() {
 
 Then `sp "make me a python venv called spike"` and the `cd` sticks.
 
+## Reverse mode: `spell explain`
+
+Sometimes you don't want a command — you have one and want to know what it does. Pipe it through `spell explain`:
+
+```sh
+spell explain "find . -type f -mtime -7 -size +50M"
+```
+
+Streams a plain-prose explanation to stdout, no TUI, no confirmation. Pipe-safe.
+
+### Auto-explain `command not found`
+
+`spell install-hook` prints a tiny zsh / bash function. Append it to your `~/.zshrc` (or `~/.bashrc`) and any time you mistype a command, `spell` quietly suggests what you probably meant:
+
+```sh
+spell install-hook >> ~/.zshrc
+exec zsh
+gti staus
+# → Did you mean: `git status`
+#   Show the working tree status of the current Git repository.
+```
+
+The hook only fires for commands that don't exist — it never intercepts your real commands. Remove the block from your rc file to disable.
+
 ## Keys
 
 | key | does |
@@ -177,8 +201,8 @@ make release-snap # local goreleaser dry run
 
 ## Roadmap
 
-- [ ] Shell hook: auto-explain failed commands (`command_not_found_handler`)
-- [ ] `spell explain <cmd>` — reverse mode, what does this command do
+- [x] Shell hook: auto-explain failed commands (`command_not_found_handler`) — `spell install-hook` (v0.4.0)
+- [x] `spell explain <cmd>` — reverse mode, what does this command do (v0.4.0)
 - [ ] Inline completion via `widget::accept-line`
 - [ ] Tools / function calling for safer multi-step plans
 - [ ] More built-in provider presets

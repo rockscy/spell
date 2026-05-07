@@ -141,6 +141,30 @@ sp() {
 
 然后 `sp "建一个叫 spike 的 python venv"`，`cd` 就会留在当前 shell 里。
 
+## 反向模式：`spell explain`
+
+有时候你不是要生成命令 —— 你已经有一条命令，想知道它在干嘛。直接喂给 `spell explain`：
+
+```sh
+spell explain "find . -type f -mtime -7 -size +50M"
+```
+
+直接把白话解释流式打到 stdout，没有 TUI、没有二次确认，可以放心 pipe 进别的东西。
+
+### 命令打错时自动解释
+
+`spell install-hook` 会打印一段 zsh / bash 钩子函数。把它追加到 `~/.zshrc`（或 `~/.bashrc`），以后你**敲错命令**时 `spell` 会安静地提示你想敲的可能是什么：
+
+```sh
+spell install-hook >> ~/.zshrc
+exec zsh
+gti staus
+# → Did you mean: `git status`
+#   Show the working tree status of the current Git repository.
+```
+
+钩子**只在命令不存在时触发**，正常命令一律不拦截。不想用了把 rc 文件里那段删掉就行。
+
 ## 快捷键
 
 | 按键 | 作用 |
@@ -177,8 +201,8 @@ make release-snap # 本地 goreleaser 模拟一次 release
 
 ## Roadmap
 
-- [ ] Shell hook：命令失败时自动用 AI 解释（`command_not_found_handler`）
-- [ ] `spell explain <cmd>` —— 反向模式，解释这条命令在干嘛
+- [x] Shell hook：命令打错时自动用 AI 解释（`command_not_found_handler`）—— `spell install-hook`（v0.4.0）
+- [x] `spell explain <cmd>` —— 反向模式，解释这条命令在干嘛（v0.4.0）
 - [ ] 配 zsh `widget::accept-line` 做内联补全
 - [ ] Tool calling，做更安全的多步规划
 - [ ] 更多内置 provider 预设
